@@ -48,6 +48,7 @@ jobs:
     timeout-minutes: 30
     env:
       COMMAND: ${{ github.event.inputs.command || (github.event.schedule == '30 1 * * *' && 'daily' || 'sources') }}
+      MAIL_CONFIGURED: ${{ secrets.RESEND_API_KEY != '' && secrets.EMAIL_FROM != '' && secrets.RADAR_EMAIL_TO != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -70,18 +71,33 @@ jobs:
           GOANYAPI_API_KEY: ${{ secrets.GOANYAPI_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
           GSC_TOKEN_JSON: ${{ secrets.GSC_TOKEN_JSON }}
+        run: |
+          if [ "$COMMAND" = "daily" ]; then
+            python -m radar daily --skip x,hf,newsites --out report.md
+          elif [ "$COMMAND" = "bootstrap" ]; then
+            python -m radar daily --skip newsites --out report.md
+          else
+            python -m radar sources --out report.md
+          fi
+          if [ -f report.md ]; then cat report.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Email the daily report
+        if: env.COMMAND == 'daily' && env.MAIL_CONFIGURED == 'true'
+        env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           RADAR_EMAIL_TO: ${{ secrets.RADAR_EMAIL_TO }}
         run: |
-          if [ "$COMMAND" = "daily" ]; then
-            python -m radar daily --skip x,hf,newsites --out report.md ${RADAR_EMAIL_TO:+--mail}
-          elif [ "$COMMAND" = "bootstrap" ]; then
-            python -m radar daily --skip newsites --out report.md ${RADAR_EMAIL_TO:+--mail}
-          else
-            python -m radar sources --out report.md ${RADAR_EMAIL_TO:+--mail}
-          fi
-          if [ -f report.md ]; then cat report.md >> "$GITHUB_STEP_SUMMARY"; fi
+          python - <<'PY'
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          from radar.notify import send
+
+          today = datetime.now(ZoneInfo("Asia/Hong_Kong")).date().isoformat()
+          text = Path("report.md").read_text(encoding="utf-8")
+          print(send(f"新词雷达中文日报 · {today}", text))
+          PY
 
       - name: Save the state
         if: always()
