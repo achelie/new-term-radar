@@ -26,8 +26,13 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: "daily or sources"
+        description: "Report to run (bootstrap initializes every source)"
+        type: choice
         default: "daily"
+        options:
+          - daily
+          - sources
+          - bootstrap
 
 concurrency:
   group: radar
@@ -70,7 +75,9 @@ jobs:
           RADAR_EMAIL_TO: ${{ secrets.RADAR_EMAIL_TO }}
         run: |
           if [ "$COMMAND" = "daily" ]; then
-            python -m radar daily --skip x,hf --out report.md ${RADAR_EMAIL_TO:+--mail}
+            python -m radar daily --skip x,hf,newsites --out report.md ${RADAR_EMAIL_TO:+--mail}
+          elif [ "$COMMAND" = "bootstrap" ]; then
+            python -m radar daily --skip newsites --out report.md ${RADAR_EMAIL_TO:+--mail}
           else
             python -m radar sources --out report.md ${RADAR_EMAIL_TO:+--mail}
           fi
